@@ -1,0 +1,89 @@
+# Production stack — set secrets via .env (never commit .env)
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-stocksage}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      ENABLE_OPENAPI: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - chroma_data:/app/chroma_db
+      - model_data:/app/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - chroma_data:/app/chroma_db
+      - model_data:/app/app/models
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
+    restart: unless-stopped
+    command: celery -A app.celery_app.celery_app beat --loglevel=info
+    env_file: .env
+    depends_on:
+      - redis
+      - postgres
+
+volumes:
+  pgdata:
+  redisdata:
+  chroma_data:
+  model_data:

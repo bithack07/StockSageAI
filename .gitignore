@@ -149,6 +149,7 @@ activemq-data/
 
 # Environments
 .env
+.env.local
 .envrc
 .venv
 env/
@@ -156,6 +157,16 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+
+# App data
+chroma_db/
+*.db
+backend/chroma_db/
 
 # Spyder project settings
 .spyderproject
@@ -216,3 +227,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Cursor / Claude local settings
+.claude/
