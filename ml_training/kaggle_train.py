@@ -96,6 +96,12 @@ def main():
     parser.add_argument("--lstm-epochs", type=int, default=25)
     parser.add_argument("--skip-cv", action="store_true")
     parser.add_argument(
+        "--yf-sleep",
+        type=float,
+        default=float(os.environ.get("STOCKSAGE_YF_SLEEP", "0.35")),
+        help="Pause between yfinance symbol fetches (default 0.35s; avoids rate limits)",
+    )
+    parser.add_argument(
         "--csv",
         default=None,
         help="Optional OHLCV CSV (symbol,date,open,high,low,close,volume) — else yfinance",
@@ -129,17 +135,17 @@ def main():
     )
 
     if not args.skip_xgb:
-        train_xgboost(symbols, skip_cv=args.skip_cv)
+        train_xgboost(symbols, skip_cv=args.skip_cv, yf_sleep_s=args.yf_sleep)
     if not args.skip_prophet:
         prophet_syms = prophet_symbol_subset(symbols, args.prophet_max)
         if prophet_syms:
             if len(prophet_syms) < len(symbols):
                 logger.info("Prophet: %d / %d symbols", len(prophet_syms), len(symbols))
-            train_prophet_models(prophet_syms)
+            train_prophet_models(prophet_syms, yf_sleep_s=args.yf_sleep)
         else:
             logger.info("Prophet skipped (--prophet-max 0)")
     if not args.skip_lstm:
-        train_lstm(symbols, epochs=args.lstm_epochs)
+        train_lstm(symbols, epochs=args.lstm_epochs, yf_sleep_s=args.yf_sleep)
 
     logger.info("Done. Upload these files to backend/app/models/:")
     logger.info("  - xgb_model.joblib")

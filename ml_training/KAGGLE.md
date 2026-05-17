@@ -107,15 +107,19 @@ Fundamental playbook features (Lynch PEG, Greenblatt, FA score) use **latest** y
      --universe nse_all \
      --lstm-epochs 25 \
      --prophet-max 200 \
+     --yf-sleep 0.35 \
      --skip-cv
    ```
 
    - **~2300+ symbols** from NSE `EQUITY_L.csv` (no `--max-symbols`)
+   - **`--yf-sleep 0.35`** pauses between Yahoo fetches (avoids mass `Too Many Requests` after ~500 symbols)
    - **XGBoost** + **LSTM** on all symbols that return enough history
    - **Prophet** on up to **200** names (Nifty 50 first, then others) — one `.pkl` per symbol
    - `--skip-cv` saves hours on the full dataset (recommended for production)
 
-   Expect **12–30+ hours** on Kaggle depending on GPU and yfinance speed. Do not interrupt; download artifacts when `=== Training complete ===` appears.
+   Expect **15–35+ hours** on Kaggle with `--yf-sleep 0.35` (~2300 symbols × 0.35s ≈ 14 min throttle alone, plus downloads). Do not interrupt; download artifacts when `Done.` appears in the log.
+
+   If you still hit rate limits, try `--yf-sleep 0.5` or `0.75`. Feature matrices are sanitized before XGBoost fit (no `inf` crash).
 
    **If the session dies mid-run**, re-run with pieces already done:
    ```python

@@ -18,6 +18,7 @@ import logging
 import os
 import pickle
 import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -74,11 +75,39 @@ FEATURES = list(ML_FULL_FEATURE_NAMES)
 HORIZON_DAYS = 7
 RETURN_THRESHOLD = 0.02
 
+# yfinance rate-limits aggressive scraping (~2 calls/symbol: history + info + graham)
+DEFAULT_YF_SLEEP_S = float(os.environ.get("STOCKSAGE_YF_SLEEP", "0.35"))
+
+
+def _yf_retry(func, label: str = "yfinance"):
+    """Retry on Yahoo rate limits with exponential backoff."""
+    last_err: Exception | None = None
+    for attempt in range(5):
+        try:
+            return func()
+        except Exception as e:
+            last_err = e
+            msg = str(e).lower()
+            if "too many requests" in msg or "rate limit" in msg:
+                wait = DEFAULT_YF_SLEEP_S * (2 ** attempt)
+                logger.warning("%s rate limited (attempt %d), sleeping %.1fs", label, attempt + 1, wait)
+                time.sleep(wait)
+            else:
+                raise
+    assert last_err is not None
+    raise last_err
+
+
+def _sanitize_feature_matrix(X: np.ndarray) -> np.ndarray:
+    """XGBoost rejects inf / huge values in QuantileDMatrix."""
+    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    return np.clip(X, -1e4, 1e4).astype(np.float32)
+
 
 def _fundamentals_for_symbol(symbol: str) -> dict:
     """Static fundamentals from yfinance (applied to all rows for that symbol)."""
     try:
-        info = yf.Ticker(symbol).info or {}
+        info = _yf_retry(lambda: yf.Ticker(symbol).info or {}, symbol)
         return {
             "pe_ratio": float(info.get("trailingPE") or info.get("forwardPE") or 0) or 0.0,
             "roce": float(info.get("returnOnEquity") or 0) or 0.0,
@@ -89,7 +118,10 @@ def _fundamentals_for_symbol(symbol: str) -> dict:
 
 
 def build_symbol_frame(symbol: str, period: str = "5y") -> pd.DataFrame:
-    hist = yf.Ticker(symbol).history(period=period, interval="1d")
+    hist = _yf_retry(
+        lambda: yf.Ticker(symbol).history(period=period, interval="1d"),
+        symbol,
+    )
     if hist.empty or len(hist) < 220:
         return pd.DataFrame()
 
@@ -138,13 +170,24 @@ def build_symbol_frame(symbol: str, period: str = "5y") -> pd.DataFrame:
     )
     out["symbol"] = symbol
     out = out.dropna(subset=FEATURES + ["target"])
+    for col in FEATURES:
+        if col in out.columns:
+            out[col] = (
+                pd.to_numeric(out[col], errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(0.0)
+            )
     return out
 
 
-def train_xgboost(symbols: list[str], skip_cv: bool = False) -> str:
+def train_xgboost(symbols: list[str], skip_cv: bool = False, yf_sleep_s: float = DEFAULT_YF_SLEEP_S) -> str:
     logger.info("=== XGBoost: building dataset ===")
+    if yf_sleep_s > 0:
+        logger.info("yfinance throttle: %.2fs pause between symbols (avoid rate limits)", yf_sleep_s)
     frames = []
-    for sym in symbols:
+    for i, sym in enumerate(symbols):
+        if yf_sleep_s > 0 and i > 0:
+            time.sleep(yf_sleep_s)
         try:
             df = build_symbol_frame(sym)
             if not df.empty:
@@ -159,9 +202,15 @@ def train_xgboost(symbols: list[str], skip_cv: bool = False) -> str:
         raise RuntimeError("No training data for XGBoost")
 
     data = pd.concat(frames, ignore_index=True)
-    logger.info("Total rows: %d | target dist:\n%s", len(data), data["target"].value_counts())
+    logger.info(
+        "Total rows: %d from %d / %d symbols | target dist:\n%s",
+        len(data),
+        len(frames),
+        len(symbols),
+        data["target"].value_counts(),
+    )
 
-    X = data[FEATURES].values.astype(np.float32)
+    X = _sanitize_feature_matrix(data[FEATURES].values.astype(np.float32))
     y = encode_direction_targets(data["target"].values.astype(np.int32))
 
     backend_name, Cls = _get_classifier()
@@ -183,7 +232,7 @@ def train_xgboost(symbols: list[str], skip_cv: bool = False) -> str:
     return str(path)
 
 
-def train_prophet_models(symbols: list[str]) -> int:
+def train_prophet_models(symbols: list[str], yf_sleep_s: float = DEFAULT_YF_SLEEP_S) -> int:
     from prophet import Prophet
 
     PROPHET_DIR.mkdir(parents=True, exist_ok=True)
@@ -196,9 +245,14 @@ def train_prophet_models(symbols: list[str]) -> int:
     })
 
     logger.info("=== Prophet: training per symbol ===")
-    for sym in symbols:
+    for i, sym in enumerate(symbols):
+        if yf_sleep_s > 0 and i > 0:
+            time.sleep(yf_sleep_s)
         try:
-            hist = yf.Ticker(sym).history(period="5y", interval="1d")
+            hist = _yf_retry(
+                lambda: yf.Ticker(sym).history(period="5y", interval="1d"),
+                sym,
+            )
             if hist.empty or len(hist) < 60:
                 logger.warning("  %s: skipped", sym)
                 continue
@@ -228,7 +282,7 @@ def train_prophet_models(symbols: list[str]) -> int:
     return ok
 
 
-def train_lstm(symbols: list[str], epochs: int = 25) -> str:
+def train_lstm(symbols: list[str], epochs: int = 25, yf_sleep_s: float = DEFAULT_YF_SLEEP_S) -> str:
     import torch
     import torch.nn as nn
     from torch.utils.data import DataLoader, TensorDataset
@@ -254,9 +308,14 @@ def train_lstm(symbols: list[str], epochs: int = 25) -> str:
             return self.head(out[:, -1, :])
 
     all_X, all_y = [], []
-    for sym in symbols:
+    for i, sym in enumerate(symbols):
+        if yf_sleep_s > 0 and i > 0:
+            time.sleep(yf_sleep_s)
         try:
-            hist = yf.Ticker(sym).history(period="5y", interval="1d")
+            hist = _yf_retry(
+                lambda: yf.Ticker(sym).history(period="5y", interval="1d"),
+                sym,
+            )
             if hist.empty or len(hist) < SEQ_LEN + HORIZON_DAYS + 50:
                 continue
             df = hist.reset_index()
@@ -293,7 +352,11 @@ def train_lstm(symbols: list[str], epochs: int = 25) -> str:
     if not all_X:
         raise RuntimeError("No LSTM training data")
 
-    X_all = np.nan_to_num(np.concatenate(all_X), nan=0.0, posinf=0.0, neginf=0.0)
+    X_all = np.clip(
+        np.nan_to_num(np.concatenate(all_X), nan=0.0, posinf=0.0, neginf=0.0),
+        -1e4,
+        1e4,
+    )
     y_all = np.concatenate(all_y)
     split = int(0.85 * len(X_all))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -376,6 +439,12 @@ def main():
     parser.add_argument("--skip-lstm", action="store_true")
     parser.add_argument("--lstm-epochs", type=int, default=25)
     parser.add_argument("--skip-cv", action="store_true", help="Skip XGBoost cross-validation")
+    parser.add_argument(
+        "--yf-sleep",
+        type=float,
+        default=DEFAULT_YF_SLEEP_S,
+        help="Seconds to wait between symbols when fetching yfinance (default 0.35)",
+    )
     args = parser.parse_args()
 
     if args.symbols:
@@ -391,7 +460,7 @@ def main():
     logger.info("Training for %d symbols → %s", len(symbols), MODELS_DIR)
 
     if not args.skip_xgb:
-        train_xgboost(symbols, skip_cv=args.skip_cv)
+        train_xgboost(symbols, skip_cv=args.skip_cv, yf_sleep_s=args.yf_sleep)
     if not args.skip_prophet:
         prophet_syms = prophet_symbol_subset(symbols, args.prophet_max)
         if not prophet_syms:
@@ -403,9 +472,9 @@ def main():
                     len(prophet_syms),
                     len(symbols),
                 )
-            train_prophet_models(prophet_syms)
+            train_prophet_models(prophet_syms, yf_sleep_s=args.yf_sleep)
     if not args.skip_lstm:
-        train_lstm(symbols, epochs=args.lstm_epochs)
+        train_lstm(symbols, epochs=args.lstm_epochs, yf_sleep_s=args.yf_sleep)
 
     logger.info("=== Training complete ===")
 
