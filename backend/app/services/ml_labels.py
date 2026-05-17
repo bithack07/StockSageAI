@@ -29,7 +29,7 @@ def direction_from_xgb_class(class_id: int) -> int:
     c = int(class_id)
     if c in XGB_TO_TARGET:
         return XGB_TO_TARGET[c]
-  # Older artifacts may expose -1, 0, 1 directly
+    # Older artifacts may expose -1, 0, 1 directly
     if c in (DIRECTION_BEARISH, DIRECTION_NEUTRAL, DIRECTION_BULLISH):
         return c
     return DIRECTION_NEUTRAL
