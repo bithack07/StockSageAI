@@ -97,9 +97,25 @@ Fundamental playbook features (Lynch PEG, Greenblatt, FA score) use **latest** y
    ```
    If you pulled an **older** repo revision that errors on `app.db` / `psycopg2`, either `git pull` the latest or add: `pydantic-settings psycopg2-binary sqlalchemy` (not needed for training after the lazy-DB fix).
 
-4. **Production train (full NSE — not a test run):**
+4. **Train on Kaggle**
 
    Notebook settings: **Internet ON**, **GPU ON** (for LSTM), **Persistence ON** (so `/kaggle/working` survives if the session restarts).
+
+   **Phase 1 — Nifty 50 (recommended first run, ~1–3 hours):**
+
+   ```python
+   !python ../ml_training/kaggle_train.py \
+     --output /kaggle/working/models \
+     --universe nifty50 \
+     --lstm-epochs 25 \
+     --prophet-max 50 \
+     --yf-sleep 0.35 \
+     --skip-cv
+   ```
+
+   Validates the full pipeline (XGB + LSTM + Prophet for all 50 names) without a 20+ hour `nse_all` job. Download models and wire them into `backend/app/models/` before scaling up.
+
+   **Phase 2 — full NSE (`nse_all`, 15–35+ hours):**
 
    ```python
    !python ../ml_training/kaggle_train.py \
