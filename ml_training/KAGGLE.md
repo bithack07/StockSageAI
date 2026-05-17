@@ -97,9 +97,32 @@ Fundamental playbook features (Lynch PEG, Greenblatt, FA score) use **latest** y
    ```
    If you pulled an **older** repo revision that errors on `app.db` / `psycopg2`, either `git pull` the latest or add: `pydantic-settings psycopg2-binary sqlalchemy` (not needed for training after the lazy-DB fix).
 
-4. **Train:**
+4. **Production train (full NSE — not a test run):**
+
+   Notebook settings: **Internet ON**, **GPU ON** (for LSTM), **Persistence ON** (so `/kaggle/working` survives if the session restarts).
+
    ```python
-   !python ../ml_training/kaggle_train.py --output /kaggle/working/models --universe nse_all --lstm-epochs 25
+   !python ../ml_training/kaggle_train.py \
+     --output /kaggle/working/models \
+     --universe nse_all \
+     --lstm-epochs 25 \
+     --prophet-max 200 \
+     --skip-cv
+   ```
+
+   - **~2300+ symbols** from NSE `EQUITY_L.csv` (no `--max-symbols`)
+   - **XGBoost** + **LSTM** on all symbols that return enough history
+   - **Prophet** on up to **200** names (Nifty 50 first, then others) — one `.pkl` per symbol
+   - `--skip-cv` saves hours on the full dataset (recommended for production)
+
+   Expect **12–30+ hours** on Kaggle depending on GPU and yfinance speed. Do not interrupt; download artifacts when `=== Training complete ===` appears.
+
+   **If the session dies mid-run**, re-run with pieces already done:
+   ```python
+   # XGB only (if LSTM/Prophet not finished yet)
+   !python ../ml_training/kaggle_train.py --output /kaggle/working/models --universe nse_all --skip-lstm --skip-prophet --skip-cv
+   # Then LSTM + Prophet (reuses same output dir; skip XGB if xgb_model.joblib exists)
+   !python ../ml_training/kaggle_train.py --output /kaggle/working/models --universe nse_all --skip-xgb --lstm-epochs 25 --prophet-max 200
    ```
 
 5. **Download artifacts** from `/kaggle/working/models`:
