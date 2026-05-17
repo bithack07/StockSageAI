@@ -7,6 +7,7 @@ import numpy as np
 from app.db import get_db
 from app.pipelines.lstm_inference import get_lstm_scores
 from app.services.intelligent_investor import GRAHAM_ML_FEATURE_NAMES, graham_ml_features
+from app.services.ml_labels import direction_from_xgb_class
 from app.services.ml_playbook_features import (
     ML_BASE_FEATURES,
     ML_FULL_FEATURE_NAMES,
@@ -129,8 +130,9 @@ def get_ml_scores(symbol: str) -> dict:
             if xgb is not None:
                 try:
                     proba = xgb.predict_proba(feature_arr)[0]
-                    classes = [int(c) for c in xgb.classes_]
-                    prob_map = dict(zip(classes, proba.tolist()))
+                    prob_map: dict[int, float] = {}
+                    for cls_id, p in zip(xgb.classes_, proba.tolist()):
+                        prob_map[direction_from_xgb_class(int(cls_id))] = float(p)
                     model_result = {
                         "bullish_prob": round(prob_map.get(1, 0.0), 3),
                         "neutral_prob": round(prob_map.get(0, 0.0), 3),

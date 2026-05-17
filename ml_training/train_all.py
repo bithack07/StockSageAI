@@ -61,6 +61,7 @@ from app.services.ml_playbook_features import (
     ML_FULL_FEATURE_NAMES,
     enrich_training_frame,
 )
+from app.services.ml_labels import encode_direction_targets
 from app.services.training_universe import (
     NIFTY_50_SYMBOLS,
     prophet_symbol_subset,
@@ -161,7 +162,7 @@ def train_xgboost(symbols: list[str], skip_cv: bool = False) -> str:
     logger.info("Total rows: %d | target dist:\n%s", len(data), data["target"].value_counts())
 
     X = data[FEATURES].values.astype(np.float32)
-    y = data["target"].values.astype(np.int32)
+    y = encode_direction_targets(data["target"].values.astype(np.int32))
 
     backend_name, Cls = _get_classifier()
     kw = dict(n_estimators=300, max_depth=5, learning_rate=0.05, random_state=42)
