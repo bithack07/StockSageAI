@@ -40,10 +40,13 @@ if str(BACKEND) not in sys.path:
 # Reuse main trainer
 from train_all import (  # noqa: E402
     HORIZON_DAYS,
-    NIFTY_50_SYMBOLS,
     train_lstm,
     train_prophet_models,
     train_xgboost,
+)
+from app.services.training_universe import (  # noqa: E402
+    prophet_symbol_subset,
+    resolve_training_symbols,
 )
 
 import logging
@@ -72,7 +75,21 @@ def main():
         default=os.environ.get("STOCKSAGE_MODELS_DIR", str(BACKEND / "app" / "models")),
         help="Output directory (use /kaggle/working/models on Kaggle)",
     )
-    parser.add_argument("--symbols", nargs="*", default=NIFTY_50_SYMBOLS)
+    parser.add_argument(
+        "--universe",
+        choices=("nifty50", "nifty500", "nse_all"),
+        default="nse_all",
+        help="Symbol universe (default: all NSE equities)",
+    )
+    parser.add_argument("--symbols-file", default=None, help="Optional ticker list file")
+    parser.add_argument("--symbols", nargs="*", default=None, help="Explicit tickers (overrides universe)")
+    parser.add_argument("--max-symbols", type=int, default=None, help="Cap symbols for Kaggle runtime")
+    parser.add_argument(
+        "--prophet-max",
+        type=int,
+        default=200,
+        help="Max Prophet .pkl files (0=skip). Full NSE list is too large for all Prophet models.",
+    )
     parser.add_argument("--skip-xgb", action="store_true")
     parser.add_argument("--skip-prophet", action="store_true")
     parser.add_argument("--skip-lstm", action="store_true")
@@ -95,7 +112,15 @@ def main():
         )
         logger.info("Default: using yfinance for symbols (Internet required).")
 
-    symbols = args.symbols
+    if args.symbols:
+        from app.services.training_universe import _to_nse_symbols
+        symbols = _to_nse_symbols(args.symbols)
+    else:
+        symbols = resolve_training_symbols(
+            args.universe,
+            symbols_file=args.symbols_file,
+            max_symbols=args.max_symbols,
+        )
     logger.info(
         "Training %d symbols with playbook ML features (%d XGB cols). Horizon=%dd",
         len(symbols),
@@ -106,7 +131,13 @@ def main():
     if not args.skip_xgb:
         train_xgboost(symbols, skip_cv=args.skip_cv)
     if not args.skip_prophet:
-        train_prophet_models(symbols)
+        prophet_syms = prophet_symbol_subset(symbols, args.prophet_max)
+        if prophet_syms:
+            if len(prophet_syms) < len(symbols):
+                logger.info("Prophet: %d / %d symbols", len(prophet_syms), len(symbols))
+            train_prophet_models(prophet_syms)
+        else:
+            logger.info("Prophet skipped (--prophet-max 0)")
     if not args.skip_lstm:
         train_lstm(symbols, epochs=args.lstm_epochs)
 

@@ -61,22 +61,14 @@ from app.services.ml_playbook_features import (
     ML_FULL_FEATURE_NAMES,
     enrich_training_frame,
 )
+from app.services.training_universe import (
+    NIFTY_50_SYMBOLS,
+    prophet_symbol_subset,
+    resolve_training_symbols,
+)
 
 # Must match app/pipelines/ml_inference.py
 FEATURES = list(ML_FULL_FEATURE_NAMES)
-
-NIFTY_50_SYMBOLS = [
-    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "HINDUNILVR.NS",
-    "ICICIBANK.NS", "BHARTIARTL.NS", "KOTAKBANK.NS", "LT.NS", "SBIN.NS",
-    "BAJFINANCE.NS", "ASIANPAINT.NS", "AXISBANK.NS", "MARUTI.NS", "TITAN.NS",
-    "NESTLEIND.NS", "HCLTECH.NS", "WIPRO.NS", "SUNPHARMA.NS", "ULTRACEMCO.NS",
-    "BAJAJFINSV.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "TECHM.NS",
-    "TMPV.NS", "INDUSINDBK.NS", "DIVISLAB.NS", "CIPLA.NS", "JSWSTEEL.NS",
-    "HINDALCO.NS", "BPCL.NS", "COALINDIA.NS", "DRREDDY.NS", "ADANIPORTS.NS",
-    "BRITANNIA.NS", "EICHERMOT.NS", "GRASIM.NS", "HEROMOTOCO.NS", "M&M.NS",
-    "TATASTEEL.NS", "TATACONSUM.NS", "UPL.NS", "VEDL.NS", "SHREECEM.NS",
-    "APOLLOHOSP.NS", "BAJAJ-AUTO.NS", "SBILIFE.NS", "HDFCLIFE.NS", "ADANIENT.NS",
-]
 
 HORIZON_DAYS = 7
 RETURN_THRESHOLD = 0.02
@@ -349,21 +341,68 @@ def train_lstm(symbols: list[str], epochs: int = 25) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Train all StockSage ML models")
-    parser.add_argument("--symbols", nargs="*", default=NIFTY_50_SYMBOLS)
+    parser.add_argument(
+        "--universe",
+        choices=("nifty50", "nifty500", "nse_all"),
+        default="nse_all",
+        help="Symbol universe (default: all NSE equities)",
+    )
+    parser.add_argument(
+        "--symbols-file",
+        default=None,
+        help="Optional text/CSV file of tickers (overrides --universe)",
+    )
+    parser.add_argument(
+        "--symbols",
+        nargs="*",
+        default=None,
+        help="Explicit symbol list (overrides universe when provided)",
+    )
+    parser.add_argument(
+        "--max-symbols",
+        type=int,
+        default=None,
+        help="Cap symbol count (debug / Kaggle time limits)",
+    )
     parser.add_argument("--skip-xgb", action="store_true")
     parser.add_argument("--skip-prophet", action="store_true")
+    parser.add_argument(
+        "--prophet-max",
+        type=int,
+        default=200,
+        help="Max per-symbol Prophet models (0 = skip Prophet). Auto-capped for large universes.",
+    )
     parser.add_argument("--skip-lstm", action="store_true")
     parser.add_argument("--lstm-epochs", type=int, default=25)
     parser.add_argument("--skip-cv", action="store_true", help="Skip XGBoost cross-validation")
     args = parser.parse_args()
-    symbols = args.symbols
+
+    if args.symbols:
+        from app.services.training_universe import _to_nse_symbols
+        symbols = _to_nse_symbols(args.symbols)
+    else:
+        symbols = resolve_training_symbols(
+            args.universe,
+            symbols_file=args.symbols_file,
+            max_symbols=args.max_symbols,
+        )
 
     logger.info("Training for %d symbols → %s", len(symbols), MODELS_DIR)
 
     if not args.skip_xgb:
         train_xgboost(symbols, skip_cv=args.skip_cv)
     if not args.skip_prophet:
-        train_prophet_models(symbols)
+        prophet_syms = prophet_symbol_subset(symbols, args.prophet_max)
+        if not prophet_syms:
+            logger.info("Prophet skipped (--prophet-max 0)")
+        else:
+            if len(prophet_syms) < len(symbols):
+                logger.info(
+                    "Prophet: training %d / %d symbols (use --prophet-max 0 to skip)",
+                    len(prophet_syms),
+                    len(symbols),
+                )
+            train_prophet_models(prophet_syms)
     if not args.skip_lstm:
         train_lstm(symbols, epochs=args.lstm_epochs)
 

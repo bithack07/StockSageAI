@@ -26,7 +26,33 @@ Fundamental playbook features (Lynch PEG, Greenblatt, FA score) use **latest** y
 
 - **~5 years daily** bars per symbol
 - **≥ 220 trading days** after indicators (script skips thin symbols)
-- Default symbol list: **Nifty 50** in `train_all.py`
+- Default universe: **all NSE equities** (`--universe nse_all`, ~1500–2000 symbols from NSE `EQUITY_L.csv`)
+
+### Symbol universe (CLI)
+
+| `--universe` | Symbols |
+|--------------|---------|
+| `nse_all` (default) | All NSE listed equities (EQUITY_L.csv; falls back to Nifty 500 → 50) |
+| `nifty500` | Nifty 500 (Wikipedia) |
+| `nifty50` | Nifty 50 only |
+
+```python
+# All NSE stocks — XGBoost + LSTM (Prophet capped at 200 names by default)
+!python ../ml_training/kaggle_train.py --output /kaggle/working/models --universe nse_all
+
+# Nifty 500 only
+!python ../ml_training/kaggle_train.py --universe nifty500 --skip-lstm
+
+# Custom list file (one symbol per line or CSV with Symbol column)
+!python ../ml_training/kaggle_train.py --symbols-file /kaggle/input/my_tickers/symbols.txt
+
+# Kaggle time limit: test on 100 names first
+!python ../ml_training/kaggle_train.py --universe nse_all --max-symbols 100 --skip-lstm
+```
+
+**Prophet:** one `.pkl` per symbol — training ~2000 Prophet models on Kaggle is not practical. Default `--prophet-max 200` (Nifty 50 first, then others). Use `--prophet-max 0` to skip Prophet entirely.
+
+**Runtime:** `nse_all` with Graham/yfinance per symbol can take **many hours** on Kaggle. Use GPU for LSTM; consider `--max-symbols` for a first run.
 
 ## Kaggle notebook steps
 
@@ -67,13 +93,13 @@ Fundamental playbook features (Lynch PEG, Greenblatt, FA score) use **latest** y
 
 3. **Install deps** (no Postgres required — training uses yfinance only):
    ```python
-   !pip install -q xgboost prophet ta yfinance scikit-learn joblib torch pandas numpy
+   !pip install -q xgboost prophet ta yfinance scikit-learn joblib torch pandas numpy requests lxml html5lib
    ```
    If you pulled an **older** repo revision that errors on `app.db` / `psycopg2`, either `git pull` the latest or add: `pydantic-settings psycopg2-binary sqlalchemy` (not needed for training after the lazy-DB fix).
 
 4. **Train:**
    ```python
-   !python ../ml_training/kaggle_train.py --output /kaggle/working/models --lstm-epochs 25
+   !python ../ml_training/kaggle_train.py --output /kaggle/working/models --universe nse_all --lstm-epochs 25
    ```
 
 5. **Download artifacts** from `/kaggle/working/models`:
@@ -95,7 +121,7 @@ Fundamental playbook features (Lynch PEG, Greenblatt, FA score) use **latest** y
 cd StockSageAI/backend
 source venv/bin/activate
 pip install xgboost prophet ta yfinance scikit-learn joblib torch
-python ../ml_training/train_all.py
+python ../ml_training/train_all.py --universe nse_all
 ```
 
 ## Feature list (XGBoost)

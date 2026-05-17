@@ -8,21 +8,9 @@ from celery import shared_task
 
 from app.cache import redis_client
 from app.db import get_db
+from app.services.training_universe import NIFTY_50_SYMBOLS
 
 logger = logging.getLogger(__name__)
-
-NIFTY_50_SYMBOLS = [
-    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "HINDUNILVR.NS",
-    "ICICIBANK.NS", "BHARTIARTL.NS", "KOTAKBANK.NS", "LT.NS", "SBIN.NS",
-    "BAJFINANCE.NS", "ASIANPAINT.NS", "AXISBANK.NS", "MARUTI.NS", "TITAN.NS",
-    "NESTLEIND.NS", "HCLTECH.NS", "WIPRO.NS", "SUNPHARMA.NS", "ULTRACEMCO.NS",
-    "BAJAJFINSV.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "TECHM.NS",
-    "TMPV.NS", "INDUSINDBK.NS", "DIVISLAB.NS", "CIPLA.NS", "JSWSTEEL.NS",
-    "HINDALCO.NS", "BPCL.NS", "COALINDIA.NS", "DRREDDY.NS", "ADANIPORTS.NS",
-    "BRITANNIA.NS", "EICHERMOT.NS", "GRASIM.NS", "HEROMOTOCO.NS", "M&M.NS",
-    "TATASTEEL.NS", "TATACONSUM.NS", "UPL.NS", "VEDL.NS", "SHREECEM.NS",
-    "APOLLOHOSP.NS", "BAJAJ-AUTO.NS", "SBILIFE.NS", "HDFCLIFE.NS", "ADANIENT.NS",
-]
 
 
 @shared_task(name="pipelines.market_data.ingest_ohlcv", bind=True, max_retries=3)
