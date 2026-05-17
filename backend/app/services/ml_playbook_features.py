@@ -246,7 +246,8 @@ def _vectorized_technical_playbook(df: pd.DataFrame) -> pd.DataFrame:
     ema20 = out["ema20"] if "ema20" in out.columns else close.ewm(span=20, adjust=False).mean()
 
     slope = ema50 - ema50.shift(25)
-    vol_r = out["volume"].rolling(20).mean() / (out["volume"].shift(20).rolling(40).mean() + 1e-8)
+    volume = out["volume"] if "volume" in out.columns else pd.Series(1.0, index=out.index)
+    vol_r = volume.rolling(20).mean() / (volume.shift(20).rolling(40).mean() + 1e-8)
 
     stage = np.where(
         (close > ema200) & (slope > 0) & (close > ema50),
@@ -273,7 +274,7 @@ def _vectorized_technical_playbook(df: pd.DataFrame) -> pd.DataFrame:
     out["murphy_align_norm"] = uptrend.astype(float) * 0.8
 
     ret = close.pct_change()
-    vol_chg = out["volume"].pct_change()
+    vol_chg = volume.pct_change()
     wy = np.where(
         (ret > 0) & (vol_chg > 0), 1.0,
         np.where((ret > 0) & (vol_chg <= 0), -0.3,

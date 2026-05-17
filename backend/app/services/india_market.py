@@ -27,6 +27,7 @@ NIFTY_SECTOR_MAP: dict[str, str] = {
     "HCLTECH": "IT",
     "WIPRO": "IT",
     "SUNPHARMA": "Pharma",
+    "TMPV": "Auto",
     "TATAMOTORS": "Auto",
     "TATASTEEL": "Metals",
     "ADANIENT": "Conglomerate",

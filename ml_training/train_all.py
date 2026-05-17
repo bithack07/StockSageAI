@@ -71,7 +71,7 @@ NIFTY_50_SYMBOLS = [
     "BAJFINANCE.NS", "ASIANPAINT.NS", "AXISBANK.NS", "MARUTI.NS", "TITAN.NS",
     "NESTLEIND.NS", "HCLTECH.NS", "WIPRO.NS", "SUNPHARMA.NS", "ULTRACEMCO.NS",
     "BAJAJFINSV.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "TECHM.NS",
-    "TATAMOTORS.NS", "INDUSINDBK.NS", "DIVISLAB.NS", "CIPLA.NS", "JSWSTEEL.NS",
+    "TMPV.NS", "INDUSINDBK.NS", "DIVISLAB.NS", "CIPLA.NS", "JSWSTEEL.NS",
     "HINDALCO.NS", "BPCL.NS", "COALINDIA.NS", "DRREDDY.NS", "ADANIPORTS.NS",
     "BRITANNIA.NS", "EICHERMOT.NS", "GRASIM.NS", "HEROMOTOCO.NS", "M&M.NS",
     "TATASTEEL.NS", "TATACONSUM.NS", "UPL.NS", "VEDL.NS", "SHREECEM.NS",
@@ -109,7 +109,8 @@ def build_symbol_frame(symbol: str, period: str = "5y") -> pd.DataFrame:
     high = df["high"]
     low = df["low"]
 
-    out = pd.DataFrame({"date": df["date"], "close": close})
+    volume = df["volume"] if "volume" in df.columns else pd.Series(0.0, index=df.index)
+    out = pd.DataFrame({"date": df["date"], "close": close, "volume": volume})
     out["rsi"] = RSIIndicator(close=close, window=14).rsi()
     macd_ind = MACD(close=close)
     out["macd"] = macd_ind.macd()
