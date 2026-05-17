@@ -5,10 +5,11 @@ Train StockSage models on Kaggle (free GPU optional for LSTM).
 Setup on Kaggle:
   1. New Notebook → Settings → Internet ON, GPU optional (for LSTM).
   2. Add dataset: search "NSE" or "Indian stock" OHLCV, OR rely on yfinance (no dataset required).
-  3. Upload this repo folder OR clone:
-       !git clone https://github.com/YOUR_USER/StockSageAI.git
+  3. Upload backend/ + ml_training/ OR clone (repo must be public on Kaggle, or use a PAT):
+       import os; os.environ["GIT_TERMINAL_PROMPT"] = "0"
+       !git clone --depth 1 https://github.com/bithack07/StockSageAI.git
   4. Run:
-       %cd StockSageAI/StockSageAI/backend
+       %cd StockSageAI/backend
        !pip install -q xgboost prophet ta yfinance scikit-learn joblib torch
        !python ../ml_training/kaggle_train.py --output /kaggle/working/models
 

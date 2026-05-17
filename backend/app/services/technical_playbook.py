@@ -12,7 +12,6 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from app.db import get_db
 from app.services.india_market import normalize_nse_symbol
 
 logger = logging.getLogger(__name__)
@@ -49,14 +48,20 @@ _CHECKLIST_MIN_PASS = 7
 
 def _load_ohlcv(symbol: str, limit: int = 260) -> pd.DataFrame:
     sym = normalize_nse_symbol(symbol)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT date, open, high, low, close, volume FROM ohlcv "
-            "WHERE symbol=%s ORDER BY date DESC LIMIT %s",
-            (sym, limit),
-        )
-        rows = cur.fetchall()
+    try:
+        from app.db import get_db
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT date, open, high, low, close, volume FROM ohlcv "
+                "WHERE symbol=%s ORDER BY date DESC LIMIT %s",
+                (sym, limit),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:
+        logger.debug("OHLCV DB unavailable for %s: %s", sym, exc)
+        return pd.DataFrame()
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume"])
@@ -68,18 +73,24 @@ def _load_ohlcv(symbol: str, limit: int = 260) -> pd.DataFrame:
 
 def _load_tech_row(symbol: str, timeframe: str = "1d") -> dict:
     sym = normalize_nse_symbol(symbol)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT rsi, macd, macd_signal, bb_upper, bb_lower, atr,
-                      ema20, ema50, ema200, stoch_k, stoch_d, vwap,
-                      patterns_json, sr_zones_json
-               FROM technical_features
-               WHERE symbol=%s AND timeframe=%s
-               ORDER BY date DESC LIMIT 1""",
-            (sym, timeframe),
-        )
-        row = cur.fetchone()
+    try:
+        from app.db import get_db
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT rsi, macd, macd_signal, bb_upper, bb_lower, atr,
+                          ema20, ema50, ema200, stoch_k, stoch_d, vwap,
+                          patterns_json, sr_zones_json
+                   FROM technical_features
+                   WHERE symbol=%s AND timeframe=%s
+                   ORDER BY date DESC LIMIT 1""",
+                (sym, timeframe),
+            )
+            row = cur.fetchone()
+    except Exception as exc:
+        logger.debug("Technical features DB unavailable for %s: %s", sym, exc)
+        return {}
     if not row:
         return {}
     cols = [

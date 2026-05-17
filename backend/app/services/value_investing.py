@@ -8,7 +8,6 @@ from typing import Any, Optional
 
 import yfinance as yf
 
-from app.db import get_db
 from app.services.india_market import (
     DEFAULT_FD_RATE_PCT,
     NIFTY_50_SYMBOL,
@@ -32,16 +31,23 @@ def _safe_float(v) -> Optional[float]:
 
 
 def _load_fundamentals(symbol: str) -> dict:
+    """Postgres fundamentals when available; empty dict for Kaggle/offline training."""
     sym = normalize_nse_symbol(symbol)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT pe_ratio, pb_ratio, roe, roce, debt_equity, fcf, dcf_intrinsic,
-                      market_cap, promoter_pct, ratios_json
-               FROM fundamentals WHERE symbol = %s""",
-            (sym,),
-        )
-        row = cur.fetchone()
+    try:
+        from app.db import get_db
+
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT pe_ratio, pb_ratio, roe, roce, debt_equity, fcf, dcf_intrinsic,
+                          market_cap, promoter_pct, ratios_json
+                   FROM fundamentals WHERE symbol = %s""",
+                (sym,),
+            )
+            row = cur.fetchone()
+    except Exception as exc:
+        logger.debug("Fundamentals DB unavailable for %s: %s", sym, exc)
+        return {}
     if not row:
         return {}
     ratios = {}

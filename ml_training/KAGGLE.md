@@ -32,16 +32,44 @@ Fundamental playbook features (Lynch PEG, Greenblatt, FA score) use **latest** y
 
 1. **Create notebook** → Add-ons → Internet **On** → Accelerator **GPU** (optional, speeds LSTM only).
 
-2. **Clone or upload** this repo:
+2. **Get the code** (pick one):
+
+   **Option A — public repo (recommended on Kaggle)**  
+   GitHub → repo **Settings** → **Change visibility** → **Public**, then:
    ```python
-   !git clone https://github.com/YOUR_ORG/StockSageAI.git
-   %cd StockSageAI/StockSageAI/backend
+   import os
+   os.environ["GIT_TERMINAL_PROMPT"] = "0"  # no interactive username/password
+   !git clone --depth 1 https://github.com/bithack07/StockSageAI.git
+   %cd StockSageAI/backend
    ```
 
-3. **Install deps:**
+   **Option B — ZIP (no git login)**  
+   Works only if the repo is **public**:
+   ```python
+   !wget -q https://github.com/bithack07/StockSageAI/archive/refs/heads/main.zip -O repo.zip
+   !unzip -q repo.zip && mv StockSageAI-main StockSageAI
+   %cd StockSageAI/backend
+   ```
+
+   **Option C — private repo**  
+   Do not type your GitHub password in the notebook (GitHub rejects it). Use a [Personal Access Token](https://github.com/settings/tokens) with `repo` scope, store it in **Kaggle → Add-ons → Secrets** as `GITHUB_TOKEN`, then:
+   ```python
+   import os
+   token = os.environ["GITHUB_TOKEN"]  # Add secret in notebook settings first
+   !git clone --depth 1 https://{token}@github.com/bithack07/StockSageAI.git
+   %cd StockSageAI/backend
+   ```
+
+   **Option D — no GitHub**  
+   Zip `backend/` + `ml_training/` from your machine → **Upload** as a Kaggle dataset → `%cd /kaggle/input/YOUR_DATASET/backend`
+
+   Repo root on GitHub is `backend/`, `ml_training/` (not `StockSageAI/StockSageAI/`).
+
+3. **Install deps** (no Postgres required — training uses yfinance only):
    ```python
    !pip install -q xgboost prophet ta yfinance scikit-learn joblib torch pandas numpy
    ```
+   If you pulled an **older** repo revision that errors on `app.db` / `psycopg2`, either `git pull` the latest or add: `pydantic-settings psycopg2-binary sqlalchemy` (not needed for training after the lazy-DB fix).
 
 4. **Train:**
    ```python
@@ -83,6 +111,17 @@ Playbook fundamental: Lynch PEG, Greenblatt combined, FA score, moat score, fund
 ## Inference without retrain
 
 Old `xgb_model.joblib` (12–16 features) still runs; playbook is blended via **`playbook_direction_prior`** (~35–45% weight). For playbook inside **learned** weights, you must deploy a newly trained model.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|--------|-----|
+| `Username for 'https://github.com':` | Repo is **private** or missing; Git wants credentials | Make repo **public** (Option A/B) or use a PAT secret (Option C) |
+| Hangs then you press `^C` | Waiting for password input in a non-interactive cell | Set `GIT_TERMINAL_PROMPT=0` and use Option A/B/C above |
+| `cd: StockSageAI/StockSageAI/backend: No such file` | Wrong path in old docs | Use `%cd StockSageAI/backend` after clone |
+| `404` on clone | Repo name/owner wrong or private without token | Confirm URL: `https://github.com/bithack07/StockSageAI` |
+| Traceback in `intelligent_investor` / `value_investing` | Old code imports Postgres at startup | `git pull` latest, or lazy-DB fix; training does not need a database |
+| `ModuleNotFoundError: psycopg2` | Same as above | Re-clone latest repo; no extra pip packages needed for training |
 
 ## Tips
 
